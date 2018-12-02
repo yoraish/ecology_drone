@@ -109,10 +109,14 @@ class Mover():
             path_string += str(x_coord) + ',' + str(y_coord) + ',' + str(yaw_coord) + ','
             print(coord)
         
-        # add the last coord to the thing
+        # add the last coord to the string, with yaw of 90
+
+        path_string += str(next_x_coord) + ',' + str(next_y_coord) + ',' + str(90)
+
+
 
         # take out last comma
-        path_string = path_string[:-1]
+        # path_string = path_string[:-1]
 
         print('publishing a string of the coords, all with 90 degrees yaw')
         print(path_string)
