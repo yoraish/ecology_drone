@@ -1,0 +1,14 @@
+<launch>
+  <arg name="model" default="$(env TURTLEBOT3_MODEL)" doc="model type [burger, waffle, waffle_pi]"/>
+  <param name="model" value="$(arg model)"/>
+
+  <include file="$(find turtlebot3_gazebo)/launch/turtlebot3_world.launch"/>
+
+  <include file="$(find turtlebot3_navigation)/launch/turtlebot3_navigation.launch">
+ 	
+  <arg name="map_file" value="/home/yoraish/catkin_ws/src/turtlebot3/turtlebot3_navigation/maps/map.yaml"/>
+  </include>
+
+  <node pkg="test_offline" type="test_offline" name="test_offline"  output="screen">
+  </node>
+</launch>

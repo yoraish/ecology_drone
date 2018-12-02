@@ -1,0 +1,140 @@
+#!/usr/bin/env python
+
+
+import rospy
+import actionlib
+import math
+from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
+from geometry_msgs.msg import Pose, Point, Quaternion
+from tf.transformations import quaternion_from_euler
+from std_msgs.msg import String
+
+
+class Follower():
+
+    def __init__(self):
+
+        # publisher to let the world know this sequence of waypoints is done
+        self.navigation_end_publisher = rospy.Publisher('navigation_end', String, queue_size=10)
+
+        # subscribe to the navigation_coord_sequence topic, which contains a string with
+        #  the dijkstra coords to the next goal (currently) hard coded
+
+        rospy.Subscriber('navigation_coord_sequence', String, self.navigation_coord_sequence_callback)
+
+        # initialize node
+        rospy.init_node('movebase_client_py')
+
+
+
+        # spin() simply keeps python from exiting until this node is stopped
+        # rospy.spin()
+
+    def navigation_coord_sequence_callback(self, data):
+        coords_string = data.data
+        print('GOT FROM CB', coords_string)
+
+        # convert to list of tuples
+        splitted_coords = coords_string.split(',')
+
+        path_list = []
+        for index in range(0, len(splitted_coords),3):
+            # print(index)
+            path_list.append((float(splitted_coords[index]), float(splitted_coords[index+1]), float(splitted_coords[index+2])))
+
+        print('######PPLLL#####', path_list)
+
+        self.follow_waypoints(path_list)
+
+
+
+    
+
+    def movebase_client(self):
+
+        client = actionlib.SimpleActionClient('move_base',MoveBaseAction)
+        client.wait_for_server()
+
+        goal = MoveBaseGoal()
+        goal.target_pose.header.frame_id = "map"
+        goal.target_pose.header.stamp = rospy.Time.now()
+        goal.target_pose.pose.position.x = 1.5
+        goal.target_pose.pose.position.y = 1.5
+        goal.target_pose.pose.orientation.w = 1.0
+
+        client.send_goal(goal)
+        wait = client.wait_for_result()
+        if not wait:
+            rospy.logerr("Action server not available!")
+            rospy.signal_shutdown("Action server not available!")
+        else:
+            return client.get_result()
+
+
+
+    def follow_waypoints(self, waypoints):
+        '''
+        waypoints - list of tuples of form [(x,y,yaw)]
+        mostly similar to movebase_client function above, but takes in a list of wyapoints
+        '''
+        client = actionlib.SimpleActionClient('move_base',MoveBaseAction)
+        client.wait_for_server()
+
+        for coord in waypoints:
+            print('moving to x=', coord[0], 'y=', coord[1], 'with a yaw of ', coord[2], 'degrees')
+            goal_x = coord[0]
+            goal_y = coord[1]
+            goal_yaw = coord[2] # this is in degrees
+
+            # transform the deg angle to a usable thing
+            # rospy.loginfo('we are trying to convert angle')
+            goal_yaw_quat = Quaternion(*(quaternion_from_euler(0, 0, goal_yaw*math.pi/180, axes='sxyz')))
+
+            #create a pose object, from (x,y,z=0) and quaternion object
+            goal_pose = Pose(Point(goal_x, goal_y,0),goal_yaw_quat)        
+
+            goal = MoveBaseGoal()
+
+            goal.target_pose.header.frame_id = "map"
+
+            goal.target_pose.header.stamp = rospy.Time.now()
+            goal.target_pose.pose = goal_pose
+
+            # goal.target_pose.pose.position.x = goal_x
+            # goal.target_pose.pose.position.y = goal_y
+            # goal.target_pose.pose.orientation.w = goal_yaw_quat
+
+            client.send_goal(goal)
+
+            wait = client.wait_for_result()
+
+            if not wait:
+                rospy.logerr("Action server not available!")
+                rospy.signal_shutdown("Action server not available!")
+            
+        # publish that the navigation has ended on navigation_end topic
+        self.navigation_end_publisher.publish('end')
+        return client.get_result()
+
+
+if __name__ == '__main__':
+
+    # navigation_end_publisher.publish("start")
+
+    follower = Follower()
+    follower.follow_waypoints(
+                            [(0.5,0,90), 
+                            # (0.5,0.5,0), 
+                            # (1.5,0,-90), 
+                            # (1,3,0), 
+                            # (2,3,0), 
+                            # (2,3,-90), 
+                            # (2,2,-90), 
+                            # (2,1, -90),
+                            # (2,0,-90),
+                            # (2,0,180),
+                            # (0,0,180)
+                                ])#, (1,2,90), (0,0,-1)])
+
+    rospy.spin()
+
