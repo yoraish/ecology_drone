@@ -9,7 +9,7 @@ import numpy
 
 
 class Mover():
-    def __init__(self):
+    def __init__(self, goal_x, goal_y):
 
         # subscribe to transforms
         self.tf = TransformListener()
@@ -20,6 +20,10 @@ class Mover():
         # self.grid_res
         # self.grid_w
         # self.grid_h
+
+        # the goal is 2-space in map frame
+        self.goal_x = goal_x
+        self.goal_y = goal_y
 
         # subscribe to /map topic to get the occupancy grid 
         rospy.Subscriber("/map", OccupancyGrid, self.map_callback)
@@ -76,10 +80,14 @@ class Mover():
         self.current_pixel = (pixel_x,pixel_y)
 
     def navigation_end_cb(self, data):
+        '''
+        When this callback is fired, it means that the robot has reached it's goal
+        We would want to send another path to a goal - calculated using Dijkstra
+        '''
         print('GOT THIS ', data, 'FROM NAVIGATION END TOPIC')
         print('caculate dijkstra')
 
-        goal_pixel = self.map_coord_to_pixel(1.5,1.5) ### the goal
+        goal_pixel = self.map_coord_to_pixel(self.goal_x,self.goal_y) ### the goal########################################
         goal_pixel_x = goal_pixel[0]
         goal_pixel_y = goal_pixel[1]
         path = tuple(self.dijkstra_to_goal(self.weighted_graph(), self.current_pixel, goal_pixel))
@@ -293,7 +301,7 @@ def main():
     rospy.init_node('mover', anonymous=True)
 
     # create new instance of the class
-    mover = Mover()
+    mover = Mover(1.8,1.5)
 
 
     

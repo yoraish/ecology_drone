@@ -5,9 +5,10 @@ import rospy
 import actionlib
 import math
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
-from geometry_msgs.msg import Pose, Point, Quaternion
+from geometry_msgs.msg import Pose, Point, Quaternion, PoseStamped
 from tf.transformations import quaternion_from_euler
 from std_msgs.msg import String
+from nav_msgs.msg import *
 
 
 class Follower():
@@ -17,6 +18,9 @@ class Follower():
         # publisher to let the world know this sequence of waypoints is done
         self.navigation_end_publisher = rospy.Publisher('navigation_end', String, queue_size=10)
 
+        # publisher for path object (rviz visualization)
+        self.path_publisher = rospy.Publisher('/path', Path, queue_size=10)
+
         # subscribe to the navigation_coord_sequence topic, which contains a string with
         #  the dijkstra coords to the next goal (currently) hard coded
 
@@ -24,8 +28,6 @@ class Follower():
 
         # initialize node
         rospy.init_node('movebase_client_py')
-
-
 
         # spin() simply keeps python from exiting until this node is stopped
         # rospy.spin()
@@ -44,11 +46,13 @@ class Follower():
 
         print('######PPLLL#####', path_list)
 
+        # before follwing, publish the path
+        self.coord_list_publish_path_pose_stamped(path_list)
+
         self.follow_waypoints(path_list)
 
 
 
-    
 
     def movebase_client(self):
 
@@ -69,6 +73,38 @@ class Follower():
             rospy.signal_shutdown("Action server not available!")
         else:
             return client.get_result()
+
+    def coord_list_publish_path_pose_stamped(self, coord_list):
+        '''
+        this funcion publishes a Path msg object (comprised of poseStamped and header) with all the poses 
+        correlating to the various coordinates (of form x,y,yaw)
+        '''
+        path = Path()
+        path.header.frame_id = '/map'
+        path.header.stamp = rospy.Time(0)
+
+
+        for coord in coord_list:
+            print('handling x=', coord[0], 'y=', coord[1], 'with a yaw of ', coord[2], 'degrees')
+            goal_x = coord[0]
+            goal_y = coord[1]
+            goal_yaw = coord[2] # this is in degrees
+
+            # transform the deg angle to a usable thing
+            goal_yaw_quat = Quaternion(*(quaternion_from_euler(0, 0, goal_yaw*math.pi/180, axes='sxyz')))
+            goal_pose = PoseStamped()
+            #create a pose object, from (x,y,z=0) and quaternion object
+            goal_pose.pose = Pose(Point(goal_x, goal_y,0),goal_yaw_quat)  
+
+            goal_pose.header.stamp = rospy.Time(0)
+            goal_pose.header.frame_id = '/map'
+            path.poses.append(goal_pose) # might be pointing to the same object all the time
+        
+        # once done adding poses, publish them
+
+        self.path_publisher.publish(path)
+
+
 
 
 
