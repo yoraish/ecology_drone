@@ -185,7 +185,10 @@ class Mover():
 
         # the allowed moves are up down left right
         # return a list of tuples that only include coordinates of cells that are empty
-        tries = [(x, y+1), (x, y-1), (x+1, y), (x-1, y)]
+        tries = [(x, y+1), (x, y-1), (x+1, y), (x-1, y), (x-1,y+1), (x+1,y-1), (x+1, y+1), (x-1, y-1)]
+
+        # add a test for outer obstacles, so won't be too close to any obstacle (account for robot width)
+        # maybe d = 10 pixels to the side
         finals = []
         for coord in tries:
             if coord[0] < self.grid_w and coord[0] >= 0 and coord[1] < self.grid_h and coord[1] >= 0:
