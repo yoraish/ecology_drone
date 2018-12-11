@@ -6,6 +6,7 @@ from tf import *
 from collections import defaultdict
 
 import numpy
+import random
 
 
 class Mover():
@@ -24,6 +25,9 @@ class Mover():
         # the goal is 2-space in map frame
         self.goal_x = goal_x
         self.goal_y = goal_y
+        
+        # radius for obstacle avoidance
+        self.radius_robot = 5 # in pixels
 
         # subscribe to /map topic to get the occupancy grid 
         rospy.Subscriber("/map", OccupancyGrid, self.map_callback)
@@ -87,10 +91,35 @@ class Mover():
         print('GOT THIS ', data, 'FROM NAVIGATION END TOPIC')
         print('caculate dijkstra')
 
-        goal_pixel = self.map_coord_to_pixel(self.goal_x,self.goal_y) ### the goal########################################
-        goal_pixel_x = goal_pixel[0]
-        goal_pixel_y = goal_pixel[1]
-        path = tuple(self.dijkstra_to_goal(self.weighted_graph(), self.current_pixel, goal_pixel))
+        # set next goal to a random point in map frame, if there is no specified goal in the class:
+        # do it as many times as needed to get a valid path
+        while True:
+            if self.goal_x == None or self.goal_y == None:
+                # generate random coordinate
+                goal_coord = self.generate_random_coord() # this gets a coord that's free, not necessarily reachable though
+                self.goal_x = goal_coord[0]
+                self.goal_y = goal_coord[1]
+
+            goal_pixel = self.map_coord_to_pixel(self.goal_x,self.goal_y) ### the goal########################################
+            print('goal pixel', goal_pixel)
+            goal_pixel_x = goal_pixel[0]
+            goal_pixel_y = goal_pixel[1]
+            dijkstra_output = self.dijkstra_to_goal(self.weighted_graph(), self.current_pixel, goal_pixel)
+            if dijkstra_output != None:
+                break
+            print('tried dijkstra on goal coord, got none, trying another coord')
+
+            # remove class goal, so next goal will be random
+            self.goal_x = None
+            self.goal_y = None
+
+            
+        print('dijkstra output', dijkstra_output)
+        path = tuple(dijkstra_output)
+
+        # remove class goal, so next goal will be random
+        self.goal_x = None
+        self.goal_y = None
 
         path_string = ''
 
@@ -100,18 +129,23 @@ class Mover():
 
             x_coord = coord[0]
             y_coord = coord[1]
-            print('this', x_coord, y_coord)
 
             next_x_coord = next_coord[0]
             next_y_coord = next_coord[1]
-            print('next', next_x_coord, next_y_coord)
+
+            delta_x = next_x_coord - x_coord
+            delta_y = next_y_coord - y_coord
 
             # calculate yaw by the slope to the next coord
 
             try:
                 yaw_coord = numpy.arctan((next_y_coord - y_coord)/(next_x_coord - x_coord))*180/numpy.pi
+                if delta_x < 0:
+                    yaw_coord = 180 + yaw_coord
             except ZeroDivisionError:
                 yaw_coord = 90
+                if delta_y < 0:
+                    yaw_coord = -90
 
 
             path_string += str(x_coord) + ',' + str(y_coord) + ',' + str(yaw_coord) + ','
@@ -123,13 +157,51 @@ class Mover():
 
 
 
-        # take out last comma
-        # path_string = path_string[:-1]
-
-        print('publishing a string of the coords, all with 90 degrees yaw')
-        print(path_string)
+        print('publishing a string of the coords, last with 90 degrees yaw')
+        # print(path_string)
 
         self.navigation_coord_sequence_publisher.publish(path_string)
+
+
+    def generate_random_coord(self):
+        '''
+        returns a random VACANT coordinate in the map frame, not necessarily reachable
+        '''
+        tried_coords = set()
+        # go into infinite loop until find good coordinate
+        while True:
+            # start with finding an empty coord in the grid space
+            random_x_pixel = random.randrange(0,self.grid_w)
+            random_y_pixel = random.randrange(0,self.grid_h)
+            # print('random [', random_x_pixel, random_y_pixel, ']')
+
+            bad_pixel_flag = False # if true then bad pixel value
+
+            #check that this pixel is empty:, and that its surroundings are also good
+            for x in range(random_x_pixel-self.radius_robot, random_x_pixel + self.radius_robot):
+                if bad_pixel_flag: break
+                for y in range(random_y_pixel - self.radius_robot, random_y_pixel + self.radius_robot):
+                    pixel_value = self.grid_pixel_value(random_x_pixel, random_y_pixel)
+
+                    if pixel_value not in {'G', 0}:
+                        # then we have a bad pixel, can break out and try a new one
+                        bad_pixel_flag = True
+                        break
+
+            # if we got here without a flag, then we got a good pixel
+            if bad_pixel_flag != True:
+                # get the coord in the map space
+                print('pixel to map', self.pixel_to_map_coord(random_x_pixel,random_y_pixel))
+
+                map_coord =  self.pixel_to_map_coord(random_x_pixel,random_y_pixel)
+         
+                return map_coord
+
+
+
+
+
+
 
 
     def odom_to_map_transformer(self, init_x, init_y):
@@ -178,7 +250,7 @@ class Mover():
         print(surrounding_list)
 
 
-    def get_possible_coords(self, x, y, grid = None):
+    def get_possible_coords(self, x, y, grid = None, radius = 6):
 
         if grid == None:
             grid = self.grid_data
@@ -193,7 +265,19 @@ class Mover():
         for coord in tries:
             if coord[0] < self.grid_w and coord[0] >= 0 and coord[1] < self.grid_h and coord[1] >= 0:
                 if self.get_item(coord[0], coord[1], grid) in [0,'G']:
-                    finals.append(coord)
+
+                    # now also check that this coordinate is far enough from obstacles:
+                    radius_flag = False
+                    for x_radius in range(x-radius, x+radius):
+                        for y_radius in range(y-radius, y+radius):
+                            if self.get_item(x_radius, y_radius, grid) not in [0,'G']:
+                                radius_flag = True
+                                break
+
+
+                    if not radius_flag:
+                        finals.append(coord)
+
         return finals 
 
     def weighted_graph(self):
@@ -272,6 +356,7 @@ class Mover():
 
     def _deconstruct_path(self, tentative_parents, end):
         if end not in tentative_parents:
+            print('returning none from dihkstra path')
             return None
         cursor = end
         path = []
@@ -304,7 +389,7 @@ def main():
     rospy.init_node('mover', anonymous=True)
 
     # create new instance of the class
-    mover = Mover(1.8,1.5)
+    mover = Mover(0.8,0.5)
 
 
     

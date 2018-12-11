@@ -44,7 +44,6 @@ class Follower():
             # print(index)
             path_list.append((float(splitted_coords[index]), float(splitted_coords[index+1]), float(splitted_coords[index+2])))
 
-        print('######PPLLL#####', path_list)
 
         # before follwing, publish the path
         self.coord_list_publish_path_pose_stamped(path_list)
@@ -116,7 +115,11 @@ class Follower():
         client = actionlib.SimpleActionClient('move_base',MoveBaseAction)
         client.wait_for_server()
 
-        for coord in waypoints:
+        # follow only a third of the waypoints
+
+        for coord_index in range(0, len(waypoints), 3):
+
+            coord = waypoints[coord_index]
             print('moving to x=', coord[0], 'y=', coord[1], 'with a yaw of ', coord[2], 'degrees')
             goal_x = coord[0]
             goal_y = coord[1]
